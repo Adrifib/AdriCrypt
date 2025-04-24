@@ -18,6 +18,8 @@ from tqdm import tqdm # Animaciones
 import tty
 import termios
 import getpass
+import tkinter as tk
+import threading
 
 init(autoreset=True) # Resetear colores automáticamente
 
@@ -26,7 +28,7 @@ def signal_handler(sig, frame):
     clear()
     print(Fore.RED + "\n🚪 Saliendo del programa... Hasta pronto! 👋")
     time.sleep(1.5)
-    clear()
+    clear()  # Asegurar que la terminal se borra al salir
     sys.exit(0)
 
 # Registrar el manejador de señal
@@ -51,7 +53,9 @@ def animacion_carga(mensaje="Cargando", duracion=3):
         sys.stdout.flush()
         time.sleep(0.1)
 
-    sys.stdout.write(f"\r{Fore.GREEN}✔ Listo!       \n")  
+    # Mensaje de finalización sin caracteres adicionales
+    sys.stdout.write(f"\r{Fore.GREEN}✔ Listo!{' ' * 20}\n")  
+    sys.stdout.flush()
 
 def barra_carga():
     for _ in tqdm(range(15), desc=Fore.YELLOW + "⏳ Cargando", ncols=60, ascii=" █", leave=False):
@@ -106,7 +110,95 @@ def descifrar_contraseña(contraseña_cifrada, password_maestra):
     except:
         return None
 
-
+# Función para mostrar la contraseña en una ventana emergente cuando el usuario lo solicita
+def mostrar_contraseña_en_ventana(contraseña, tiempo_mostrar=5):
+    def abrir_ventana():
+        # Crear la ventana
+        ventana = tk.Tk()
+        ventana.title("Contraseña Descifrada")
+        ventana.geometry("500x150")
+        ventana.configure(background="#1e1e1e")
+        
+        # Variable para controlar si la ventana sigue activa
+        ventana_activa = True
+        
+        # Función para manejar el cierre de la ventana
+        def on_closing():
+            nonlocal ventana_activa
+            ventana_activa = False
+            ventana.destroy()
+        
+        # Asociar el manejador de eventos al cierre de la ventana
+        ventana.protocol("WM_DELETE_WINDOW", on_closing)
+        
+        # Centrar la ventana en la pantalla
+        ancho_ventana = ventana.winfo_reqwidth()
+        alto_ventana = ventana.winfo_reqheight()
+        pos_x = int(ventana.winfo_screenwidth() / 2 - ancho_ventana / 2)
+        pos_y = int(ventana.winfo_screenheight() / 2 - alto_ventana / 2)
+        ventana.geometry(f"+{pos_x}+{pos_y}")
+        
+        # Crear etiqueta con la contraseña
+        tk.Label(
+            ventana, 
+            text="Tu contraseña es:", 
+            font=("Arial", 12), 
+            background="#1e1e1e", 
+            foreground="#e0e0e0"
+        ).pack(pady=(20, 5))
+        
+        tk.Label(
+            ventana, 
+            text=contraseña, 
+            font=("Arial", 16, "bold"), 
+            background="#1e1e1e", 
+            foreground="#4CAF50"
+        ).pack(pady=5)
+        
+        # Etiqueta de tiempo restante
+        lbl_tiempo = tk.Label(
+            ventana, 
+            text=f"Esta ventana se cerrará en {tiempo_mostrar} segundos", 
+            font=("Arial", 10), 
+            background="#1e1e1e", 
+            foreground="#e0e0e0"
+        )
+        lbl_tiempo.pack(pady=(5, 10))
+        
+        # Usamos after en lugar de un hilo para el contador
+        tiempo_restante = [tiempo_mostrar]  # Usamos lista para poder modificarla
+        
+        def actualizar_contador():
+            # Si la ventana ya no está activa, no hacemos nada
+            if not ventana_activa:
+                return
+                
+            tiempo_restante[0] -= 1
+            if tiempo_restante[0] > 0:
+                # Verificamos si la ventana sigue existiendo antes de actualizar
+                try:
+                    lbl_tiempo.config(text=f"Esta ventana se cerrará en {tiempo_restante[0]} segundos")
+                    # Programamos la siguiente actualización solo si la ventana sigue activa
+                    ventana.after(1000, actualizar_contador)
+                except tk.TclError:
+                    # La ventana fue cerrada, no hacemos nada
+                    pass
+            else:
+                # Cuando llegue a cero, cerramos la ventana si sigue activa
+                if ventana_activa:
+                    try:
+                        ventana.destroy()
+                    except tk.TclError:
+                        # La ventana ya fue cerrada, no hacemos nada
+                        pass
+        
+        # Iniciamos el contador usando el propio sistema de eventos de tkinter
+        ventana.after(1000, actualizar_contador)
+        
+        # Ejecutar la ventana
+        ventana.mainloop()
+    
+    return abrir_ventana
 
 # Menú principal
 
@@ -157,15 +249,34 @@ def menu():
                 descifrada = descifrar_contraseña(cifrada, password_maestra)
                 
                 if descifrada is not None:
-                    print()
-                    print(Fore.YELLOW + "\n✅ Contraseña original:")
-                    print(Fore.GREEN + descifrada)
+                    clear()  # Borramos la terminal antes de mostrar nuevos mensajes
+
+                    print(Fore.GREEN + "✅ Contraseña descifrada con éxito!")
+
+                    # Preguntar al usuario si desea ver la contraseña en una ventana segura
+                    print(Fore.CYAN + "\n¿Cómo deseas ver la contraseña descifrada?")
+                    print(Fore.YELLOW + "1. Mostrar en ventana segura")
+                    print(Fore.MAGENTA + "2. Mostrar aquí en la terminal")
+                    
+                    opcion_ventana = input(Fore.CYAN + "\n👉 Elige una opción (1/2): ")
+                    
+                    if opcion_ventana == "1":
+                        # Mostrar la contraseña en una ventana emergente
+                        print(Fore.GREEN + "\nAbriendo ventana segura...")
+                        func_ventana = mostrar_contraseña_en_ventana(descifrada)
+                        func_ventana()  # Ejecutar la función para abrir la ventana
+                        # Limpiamos la pantalla después de que la ventana se cierre
+                        clear()
+                    else:
+                        # Mostrar la contraseña en la terminal
+                        print(Fore.YELLOW + "\n✅ Contraseña original:")
+                        print(Fore.GREEN + descifrada)
                 else:
                     print()
                     print(Fore.RED + "❌ Error: Clave maestra incorrecta o contraseña corrupta.")
-
-                time.sleep(2)
-                input(Fore.CYAN + "\nPresiona cualquier tecla para volver al menú principal...")
+                
+                print()  # Agregamos una línea en blanco
+                input(Fore.CYAN + "Presiona cualquier tecla para volver al menú principal...")
 
             elif opcion == "3":
                 clear()
@@ -188,8 +299,8 @@ def menu():
             elif opcion == "4":
                 clear()
                 print(Fore.RED + "\n🚪 Saliendo del programa... Hasta pronto! 👋")
-                time.sleep(1)
-                clear()
+                time.sleep(1.5)
+                clear()  # Asegurar que la terminal se borra al salir
                 break
 
             else:
